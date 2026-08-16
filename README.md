@@ -7,7 +7,7 @@
   <a href="https://www.npmjs.com/package/dsh-better-tools"><img alt="npm" src="https://img.shields.io/npm/v/dsh-better-tools" /></a>
   <img alt="Shell 偏好" src="https://img.shields.io/badge/-Shell%20偏好-4d6bfe" /> <img alt="侧边栏按钮" src="https://img.shields.io/badge/-侧边栏按钮-4d6bfe" /> <img alt="Git Bash 终端卡片" src="https://img.shields.io/badge/-Git%20Bash%20终端卡片-4d6bfe" /> <img alt="全局生效" src="https://img.shields.io/badge/-全局生效-4d6bfe" /><br /><br />
   <b>侧边栏独立入口 + 设置式弹窗</b>，一键切换 Agent 的 shell 偏好（Git Bash / PowerShell / 关闭），<br />
-  并把自定义 <code>bash</code> 工具升级成与官方 <code>pwsh</code> 同款的**可点击终端卡片**。
+  并内置**全局真实 Git Bash 工具**（`gitbash`），任何预设/模式下都有与官方 <code>pwsh</code> 同款的可点击终端卡片。
 </div>
 
 ## ✨ 功能一览
@@ -15,11 +15,11 @@
 - **🧰 侧边栏入口**：`sidebar.footer.action` 槽注册的设置式按钮（官方拼图图标，与设置按钮同款风格），收起侧边栏时自动变圆形图标
 - **⚙️ Shell 优先开关**：点击弹设置式居中弹窗，三个选项——关闭 / Git Bash / PowerShell；点选即写入 DSH 设置文档（`better-tools.shell`，默认 `gitbash`）
 - **🌏 全局生效**：host 注册的全局系统提示段落**实时读设置**——无论选择哪个 Agent 预设 / 模式，所有会话的模型都被指示优先使用所选 shell，切换后下一个模型步骤即生效
-- **📺 Git Bash 终端卡片**（随 `cordis-gitbash` 预设）：自定义 `bash` 工具声明 `card: 'terminal'` 渲染意图，与官方 `pwsh` 一样显示可点击终端卡片（命令标题、cwd 头部、实时输出、退出码徽标）
+- **📺 Git Bash 终端卡片**（**全局 `gitbash` 工具**）：插件在 host 注册真实 Git Bash 工具（经 `ctx.subprocess` 直接 spawn、非沙箱），**任何预设/模式**可用；与官方 `pwsh` 一样显示可点击终端卡片（命令标题、cwd 头部、实时输出、退出码徽标）
 - **🔌 服务化**：宿主服务 `ctx.betterTools`、模型工具 `better_tools_ping`、JSON 路由 `/better-tools/api/ping`、`/better-tools/api/shell`（GET 读 / PUT 写）
 - **⚡ 零侵入**：不修改 DSH 源码，靠 `dsh.bundle.patch` + profile bundles 一条命令自动挂载
 
-> 🔌 **两个平面**：插件（host/client 双半，npm 包）提供侧边栏与全局偏好；`cordis-gitbash` 预设（agent preset）提供 Git Bash 工具与终端卡片。两者正交、分别部署，安装指南见 [install.md](./install.md)（AI 给 AI 的安装指南）。
+> 🔌 **两个平面**：插件（host/client 双半，npm 包）提供侧边栏、全局偏好与**全局 `gitbash` 工具**（真实 Git Bash，任何预设可用）；`cordis-gitbash` 预设（agent preset）提供技能目录与预设体验。两者正交、分别部署，安装指南见 [install.md](./install.md)（AI 给 AI 的安装指南）。
 
 ## 🆕 最近更新
 
@@ -31,7 +31,7 @@
 |---|---|
 | 🧰 侧边栏入口 | `sidebar.footer.action` 槽注册设置式按钮，居中弹窗展示宿主状态 + Shell 优先开关 |
 | ⚙️ Shell 偏好 | `off / gitbash / pwsh`，持久化于 `better-tools.shell` 设置命名空间，全局 systemPrompt 实时联动 |
-| 📺 bash 终端卡片 | vendor 预设内 `tool-gitbash-v2.mjs` 声明 `presentCall`/`presentResult`（`card: 'terminal'`），与 pwsh 同款 |
+| 📺 Git Bash 终端卡片 | 全局 `gitbash` 工具（`ctx.subprocess` 直接 spawn）声明 `presentCall`/`presentResult`（`card: 'terminal'`），与 pwsh 同款；任何预设可用 |
 | 🚀 跨机器分发 | 已发布 npm（`dsh-better-tools@0.1.0`）+ GitHub（`xiegaoxiao/dsh-better-tools`）；插件安装脚本 + 预设部署脚本随包 |
 
 ## 🚀 安装
@@ -60,7 +60,9 @@ dsh plugin --profile web add dsh-better-tools
 
 装完**重启 `dsh web`**（host 半改动生效），硬刷新浏览器（Cmd/Ctrl+Shift+R）。
 
-### ② cordis-gitbash 预设（Git Bash 终端卡片）
+### ② cordis-gitbash 预设（技能 + 预设体验）
+
+插件已内置全局 `gitbash` 工具，终端卡片**不依赖**预设；部署预设是为了获得 cordis-gitbash 的技能目录与预设体验。
 
 ```sh
 # Git Bash / macOS / Linux（从 npm 安装的包内直接调用）
@@ -161,7 +163,7 @@ npm run watch    # tsdown --watch
 ## 🔐 安全
 
 - `/better-tools/api/shell` 的 `PUT` 会写设置文档；真实部署建议套上与官方 `/api` 一致的浏览器信任围栏（当前为演示性开放路由）
-- 预设内 `bash` 工具**非沙箱**（Git Bash 无法在 harness 文件沙箱下启动），仅建议在可信环境使用；`pwsh` 保持沙箱
+- 全局 `gitbash` 工具与预设内 `bash` 工具均**非沙箱**（Git Bash 无法在 harness 文件沙箱下启动），仅建议在可信环境使用；`pwsh` 保持沙箱
 
 ## ⚠️ 已知限制
 
@@ -172,7 +174,7 @@ npm run watch    # tsdown --watch
 
 ## 🖥️ 平台支持
 
-Windows 为主目标（预设的 Git Bash 工具依赖真实 Git Bash）；macOS / Linux 可安装插件（Shell 偏好建议关闭）。跨机器部署链路：npm 发布 + GitHub raw 一键脚本，均已在 Windows 验证。
+Windows 为主目标（`gitbash` 工具与预设依赖真实 Git Bash）；macOS / Linux 可安装插件（`gitbash` 偏好建议关闭）。跨机器部署链路：npm 发布 + GitHub raw 一键脚本，均已在 Windows 验证。
 
 ## 🔗 链接
 

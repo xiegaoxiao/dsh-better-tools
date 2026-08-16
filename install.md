@@ -3,8 +3,8 @@
 > 阅读对象：**在目标机器上执行的 AI 代理**。本文是逐步操作指令：每步给出精确命令与预期输出，完成一步验证一步再继续。目标机器 = 一台新的 / 尚未装过本插件的 DSH 机器。
 >
 > 目标：让目标机器获得
-> 1. **dsh-better-tools 插件**（host 服务 + 路由 + 侧边栏按钮 + Shell 优先开关 + 全局 shell 偏好提示）
-> 2. **cordis-gitbash 预设**（自定义 Git Bash 工具，带与 pwsh 相同的可点击终端卡片）
+> 1. **dsh-better-tools 插件**（host 服务 + 路由 + 侧边栏按钮 + Shell 优先开关 + 全局 shell 偏好提示 + **全局 `gitbash` 工具**——真实 Git Bash，任何预设可用，带与 pwsh 相同的可点击终端卡片）
+> 2. **cordis-gitbash 预设**（技能目录 + 预设体验；bash 终端卡片已由插件内置，不再依赖预设）
 
 ## 0. 前置检查（全部通过才继续）
 
@@ -22,7 +22,7 @@ pnpm --version        # 缺失 → npm install -g pnpm（dsh plugin 依赖 pnpm�
 ls ~/.dsh/profiles/web/package.json   # 文件存在即 OK；否则先跑一次 `dsh web` 再 Ctrl+C
 ```
 
-平台：主要目标 **Windows + Git Bash**（预设的 bash 工具依赖真实 Git Bash）。macOS/Linux 可装插件，但 `gitbash` 默认偏好建议改为 `off`。
+平台：主要目标 **Windows + Git Bash**（`gitbash` 工具依赖真实 Git Bash）。macOS/Linux 可装插件，但 `gitbash` 默认偏好建议改为 `off`。
 
 ## 1. 安装插件（npm）
 
@@ -82,7 +82,9 @@ curl -s -X PUT -H "content-type: application/json" -d '{"shell":"gitbash"}' http
 - modal 内「宿主状态」显示 `host ok · dsh-better-tools@0.1.0`（绿）。
 - modal 内「Shell 优先」三个选项可点选，点选后无报错（若显示 `设置读写失败` → 回到第 3 步排查路由）。
 
-## 5. 部署预设（bash 终端卡片）
+## 5. 部署预设（技能目录 + 预设体验）
+
+> 终端卡片已由插件内置的全局 `gitbash` 工具提供，**不依赖预设**。部署预设是为了获得 cordis-gitbash 的技能目录与预设体验；不需要可跳过本步。
 
 从 npm 安装的包内直接调用：
 
@@ -113,12 +115,12 @@ grep -c "presentCall\|presentResult\|card: 'terminal'" ~/.dsh/.agent-presets/cor
 # 期望 ≥ 1（终端卡片渲染已包含）
 ```
 
-## 6. 验证预设行为（端到端）
+## 6. 验证 Git Bash 行为（端到端）
 
-1. 在 DSH GUI **新建会话**，选择 `cordis-gitbash` 预设。
-2. 让 Agent 执行一条 bash 命令（如 `ls`）。
-3. 期望：会话中出现与 `pwsh` 相同的**可点击终端卡片**（命令标题、cwd 头部、输出、退出码徽标），不是纯文本卡片。
-4. 若 Agent 仍显示「Shell 偏好」旧行为：新会话会重新加载预设与全局提示，无需重启；确认第 5 步部署与第 2 步重启已完成。
+1. 在 DSH GUI **新建会话**（任意预设；默认 `standard` 亦可——这正是全局 `gitbash` 工具的意义）。
+2. 让 Agent 执行一条 shell 命令（如 `ls`）。
+3. 期望：Agent 使用 `gitbash` 工具（或 `bash`），会话中出现与 `pwsh` 相同的**可点击终端卡片**（命令标题、cwd 头部、输出、退出码徽标），不是纯文本卡片。
+4. 若 Agent 仍默认用 `pwsh`：确认第 2 步重启已完成（host 半改动需重启进程）、设置值非 `pwsh`（第 3 步 ⑤）。
 
 ## 7. 故障排查
 

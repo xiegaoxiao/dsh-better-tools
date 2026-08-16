@@ -1,6 +1,6 @@
 {
   "name": "dsh-better-tools",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DSH web plugin scaffold: a minimal host/client dual-half plugin that mounts through dsh.bundle.patch + profile bundles. Demonstrates a host service + model tool + web route, and a client-side React widget.",
   "type": "module",
   "license": "MIT",

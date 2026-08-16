@@ -26,7 +26,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { BetterToolsHttpRequest, BetterToolsHttpResponse, Context, ShellPreference } from './context-types.ts'
+import type { BetterToolsHttpRequest, BetterToolsHttpResponse, BetterToolsSpawnHandle, BetterToolsSubprocessService, Context, ShellPreference } from './context-types.ts'
 
 /** Plugin identity for cordis.yml rows. */
 export const name = 'dsh-better-tools'
@@ -43,7 +43,7 @@ export const name = 'dsh-better-tools'
 export const inject = ['webServer', 'tools', 'settings', 'systemPrompt']
 
 /** Plugin version, kept in sync with package.json `version`. */
-const VERSION = '0.1.0'
+const VERSION = '0.1.1'
 
 // ── Shell-preference setting ────────────────────────────────────────────────
 /** Settings namespace owned by this plugin (persisted in the user-settings document). */
@@ -62,7 +62,7 @@ const SHELL_PROMPT_VARIABLE = 'better_tools_shell_preference'
 
 /** Human text per option for the model-facing prompt section. */
 const SHELL_PROMPT_TEXT: Record<ShellPreference, string> = {
-  gitbash: 'Prefer the Git Bash shell: use the `bash` tool for shell commands unless the task explicitly requires PowerShell.',
+  gitbash: 'Prefer the `gitbash` tool — a real Git Bash spawned directly, available on every preset — for shell commands unless the task explicitly requires PowerShell. (The standard `bash` tool is not a real Git Bash on Windows; use `gitbash`.)',
   pwsh: 'Prefer the PowerShell shell: use the `pwsh` tool for shell commands unless the task explicitly requires Git Bash.',
   off: 'Use whichever shell fits the task (no forced preference).',
 }
@@ -73,6 +73,101 @@ function readShellPreference(ctx: Context): ShellPreference {
   const section = settings?.get(SHELL_NAMESPACE)
   const value = section?.[SHELL_FIELD]
   return SHELL_OPTIONS.includes(value as ShellPreference) ? value as ShellPreference : DEFAULT_SHELL
+}
+
+// ── Real Git Bash tool (global) ─────────────────────────────────────────────
+// The official `bash` tool routes through `ctx.shell`, which on Windows is the
+// pwsh executor (dsh-shell's win32 layer swaps the POSIX rows) — so on the
+// default `standard` preset the `bash` tool does NOT provide a real Git Bash
+// and agents fall back to pwsh. This plugin registers a GLOBAL `gitbash` tool
+// that spawns real Git Bash directly via `ctx.subprocess` (unconfined, because
+// Git Bash cannot start under the harness file sandbox), so the shell
+// preference is effective on every preset/mode.
+
+/** True for an absolute Windows path (drive letter, UNC, or a root-relative path). */
+function isAbsoluteWin(p: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(p) || p.startsWith('\\\\') || p.startsWith('/')
+}
+
+/** Join a base dir and a relative path with backslashes (Windows). */
+function joinWinPath(base: string, rel: string): string {
+  const b = base.replace(/[\\/]+$/, '')
+  const r = rel.replace(/^[\\/]+/, '')
+  return b + '\\' + r.split(/[\\/]/).join('\\')
+}
+
+/** Resolve Git Bash via the subprocess resolver, with common install-location fallbacks. */
+async function resolveGitBash(subprocess: BetterToolsSubprocessService): Promise<string> {
+  try {
+    return await subprocess.resolveExecutable('bash')
+  } catch {
+    const candidates = [
+      'E:\\Program Files\\Git\\bin\\bash.exe',
+      'C:\\Program Files\\Git\\bin\\bash.exe',
+      'C:\\Program Files\\Git\\usr\\bin\\bash.exe',
+      'C:\\Program Files\\Git\\cmd\\bash.exe',
+    ]
+    for (const candidate of candidates) {
+      try {
+        return await subprocess.resolveExecutable(candidate)
+      } catch {
+        // try next candidate
+      }
+    }
+    throw new Error('Git Bash (bash.exe) was not found on this machine')
+  }
+}
+
+/** One captured stream with its truncation marker. */
+interface GitBashStream {
+  text: string
+  truncated: boolean
+  spillPath?: string
+}
+
+function gitBashStreamText(read: GitBashStream | undefined): string {
+  if (read === undefined) return ''
+  if (!read.truncated) return read.text
+  return read.text + (read.spillPath !== undefined ? `\n[output truncated; full output: ${read.spillPath}]` : '\n[output truncated]')
+}
+
+/** Render the gitbash result as the model-facing text (marker contract identical to the shell tools). */
+function renderGitBashResult(value: { exitCode: number | null; signal: string | null; timedOut: boolean; aborted: boolean; timeoutMs: number; stdout?: GitBashStream; stderr?: GitBashStream }): string {
+  const out = gitBashStreamText(value.stdout)
+  const err = gitBashStreamText(value.stderr)
+  let body = out
+  if (err !== '') {
+    if (body !== '' && !body.endsWith('\n')) body += '\n'
+    body += `[stderr]\n${err}`
+  }
+  if (body === '') body = '(no output)'
+  const markers: string[] = []
+  if (value.timedOut) markers.push(`[timed out after ${value.timeoutMs}ms]`)
+  if (value.aborted) markers.push('[aborted]')
+  if (value.signal !== null && value.signal !== undefined) markers.push(`[killed by signal: ${value.signal}]`)
+  else if (value.exitCode !== 0 && value.exitCode !== null) markers.push(`[exit code: ${value.exitCode}]`)
+  if (markers.length > 0) {
+    if (!body.endsWith('\n')) body += '\n'
+    body += markers.join('\n')
+  }
+  return body
+}
+
+/**
+ * Recover the terminal exit pill from the rendered result text — the inverse
+ * of the `[exit code: N]` / `[killed by signal: X]` markers above. Copied from
+ * `@deepseek-ai/dsh-shell` (kept local to avoid an extra runtime dependency).
+ */
+function parseExitStatus(text: string): { body: string; exitCode?: number; signal?: string } {
+  const signal = /\n\[killed by signal: ([^\]\n]+)\]$/.exec(text)
+  if (signal?.[1] !== undefined) {
+    return { body: text.slice(0, signal.index), signal: signal[1] }
+  }
+  const exit = /\n\[exit code: (\d+)\]$/.exec(text)
+  if (exit?.[1] !== undefined) {
+    return { body: text.slice(0, exit.index), exitCode: Number(exit[1]) }
+  }
+  return { body: text, exitCode: 0 }
 }
 
 /**
@@ -158,6 +253,166 @@ export function apply(ctx: Context): void {
       }
     },
     'dsh-better-tools: shell-preference system prompt',
+  )
+
+  // ── Real Git Bash tool (global) ──────────────────────────────────────────
+  // Registered only when `ctx.subprocess` is composed (always in the web
+  // profile). This is what makes the `gitbash` shell preference actually work
+  // on the default `standard` preset: a real Git Bash, spawned directly and
+  // unconfined, with the same terminal-card rendering as the official pwsh.
+  ctx.effect(
+    () => {
+      const subprocess = ctx.get('subprocess')
+      if (subprocess === undefined) return
+      let bashResolve: Promise<string> | undefined
+      const getBash = (): Promise<string> => {
+        bashResolve ??= resolveGitBash(subprocess)
+        return bashResolve
+      }
+      return ctx.tools.register(defineTool({
+        name: 'gitbash',
+        description:
+          'Execute a shell command via real Git Bash (`bash -c`) and return its stdout/stderr. '
+          + 'Unlike the standard `bash` tool (which on Windows routes through the PowerShell executor), '
+          + 'this tool spawns actual Git Bash directly, so bash/POSIX syntax works everywhere. '
+          + 'Use bash/POSIX style (`ls`, `grep`, `sed`, `cat`, `&&`, pipes, `$VAR`) and POSIX-style paths. '
+          + 'Each call runs in a fresh Git Bash process: no state (cwd, variables, functions) persists between calls — '
+          + 'pass `workdir` instead of using `cd`. Non-zero exits are reported as `[exit code: N]`. '
+          + 'IMPORTANT: Git Bash (MSYS2) cannot start under the harness file sandbox (its signal pipe is denied by the '
+          + 'restricted token), so this tool runs UNCONFINED with full filesystem access, like your own terminal — '
+          + 'only touch files you are meant to touch. Long output is truncated to its tail; the full output is saved '
+          + 'to a file whose path is reported when available.',
+        parameters: {
+          command: { type: 'string', description: 'The bash command to execute via Git Bash.', required: true },
+          description: { type: 'string', description: 'Clear, concise description of what this command does in active voice, 5-10 words. Examples: "List files in current directory"; "Show git status"; "Count lines in a file".', required: true },
+          workdir: { type: 'string', description: 'Working directory for this command. Defaults to the session workspace; a relative path is resolved against it.' },
+          timeoutMs: { type: 'number', description: 'Timeout in milliseconds; the process tree is killed on expiry. Defaults to 120000.' },
+        },
+        output: {
+          schema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              exitCode: { oneOf: [{ type: 'integer' }, { type: 'null' }], required: true, description: 'Process exit code, or null when killed by a signal.' },
+              signal: { oneOf: [{ type: 'string' }, { type: 'null' }], required: true, description: 'Killing signal name, or null when the process exited.' },
+              timedOut: { type: 'boolean', required: true, description: 'Whether the command hit the timeout.' },
+              aborted: { type: 'boolean', required: true, description: 'Whether the call was aborted.' },
+              timeoutMs: { type: 'number', required: true, description: 'The applied timeout in milliseconds.' },
+              stdout: { type: 'object', required: true, additionalProperties: false, properties: {
+                text: { type: 'string', required: true, description: 'Captured stdout text.' },
+                truncated: { type: 'boolean', required: true, description: 'Whether output exceeded the in-memory cap.' },
+                spillPath: { type: 'string', description: 'Path to the spilled full output when truncated.' },
+              } },
+              stderr: { type: 'object', required: true, additionalProperties: false, properties: {
+                text: { type: 'string', required: true, description: 'Captured stderr text.' },
+                truncated: { type: 'boolean', required: true, description: 'Whether output exceeded the in-memory cap.' },
+                spillPath: { type: 'string', description: 'Path to the spilled full output when truncated.' },
+              } },
+            },
+          },
+          render: (_args, value) => [{
+            type: 'text',
+            text: renderGitBashResult(value as Parameters<typeof renderGitBashResult>[0]),
+          }],
+        },
+        presentCall: (args) => {
+          const a = args as { command?: string; description?: string; workdir?: string }
+          return {
+            card: 'terminal',
+            title: a.command ?? '',
+            ...(a.description !== undefined && a.description !== '' ? { description: a.description } : {}),
+            ...(a.workdir !== undefined && a.workdir !== '' ? { cwd: a.workdir } : {}),
+          }
+        },
+        presentResult: (args, result) => {
+          const content = Array.isArray(result.content) && result.content.length === 1 ? result.content[0] : undefined
+          if (content === undefined || content.type !== 'text') return undefined
+          const raw = content.text
+          if (result.isError) {
+            return {
+              card: 'generic',
+              content: [{ type: 'text', text: `\`\`\`console\n${raw.replace(/\n+$/, '')}\n\`\`\`` }],
+            }
+          }
+          const { body, ...exit } = parseExitStatus(raw)
+          return { card: 'terminal', output: body, ...exit }
+        },
+        execute: async (args, exec) => {
+          const a = args as { command?: unknown; description?: unknown; workdir?: unknown; timeoutMs?: unknown }
+          const e = exec as { agent?: { session?: { header?: { cwd?: string } } }; signal: { aborted: boolean } }
+          if (typeof a.command !== 'string' || a.command.trim().length === 0) throw new Error('invalid command: expected a non-empty string')
+          if (typeof a.description !== 'string' || a.description.trim().length === 0) throw new Error('invalid description: expected a non-empty string')
+          if (a.timeoutMs !== undefined && (typeof a.timeoutMs !== 'number' || !Number.isFinite(a.timeoutMs) || a.timeoutMs <= 0)) {
+            throw new Error('invalid timeoutMs: expected a positive number')
+          }
+          const bashExe = await getBash()
+          const timeoutMs = a.timeoutMs !== undefined ? Math.min(Math.floor(a.timeoutMs), 3600000) : 120000
+          const headerCwd = e.agent?.session?.header?.cwd
+          let workdir = typeof a.workdir === 'string' && a.workdir.length > 0 ? a.workdir : headerCwd
+          if (workdir === undefined) {
+            const policySvc = ctx.get('sandboxPolicy') as { workspaceRoot?: string } | undefined
+            if (policySvc !== undefined) workdir = policySvc.workspaceRoot
+          }
+          if (workdir === undefined) throw new Error('no working directory: pass `workdir` or run inside a session')
+          if (!isAbsoluteWin(workdir) && headerCwd !== undefined) workdir = joinWinPath(headerCwd, workdir)
+
+          const argv = [bashExe, '-c', a.command]
+          let proc: BetterToolsSpawnHandle
+          try {
+            proc = subprocess.spawn({
+              argv,
+              cwd: workdir,
+              stdio: {
+                stdin: 'ignore',
+                stdout: { maxBytes: 400000, spill: { maxBytes: 4000000 } },
+                stderr: { maxBytes: 400000, spill: { maxBytes: 4000000 } },
+              },
+              graceMs: 3000,
+              signal: e.signal,
+            })
+          } catch (err) {
+            throw new Error('failed to start Git Bash: ' + String(err && err instanceof Error ? err.message : err))
+          }
+
+          // Host-process deadline (plain host timer, cleared on settlement).
+          let timedOut = false
+          const deadlineTimer = setTimeout(() => {
+            timedOut = true
+            try {
+              proc.terminate()
+            } catch {
+              // process already gone
+            }
+          }, timeoutMs)
+          let outcome: { exitCode: number; signal: string | null }
+          try {
+            outcome = await proc.done
+          } catch (err) {
+            clearTimeout(deadlineTimer)
+            throw new Error('Git Bash process failed to start: ' + String(err && err instanceof Error ? err.message : err))
+          }
+          clearTimeout(deadlineTimer)
+
+          const readOut = (reader: BetterToolsSpawnHandle['collected']['stdout']): GitBashStream | undefined => {
+            if (reader === undefined) return undefined
+            const r = reader.readFrom(0)
+            const out: GitBashStream = { text: r.text, truncated: r.lossy }
+            if (r.spillPath !== undefined) out.spillPath = r.spillPath
+            return out
+          }
+          return {
+            exitCode: outcome.exitCode,
+            signal: outcome.signal,
+            timedOut,
+            aborted: e.signal.aborted,
+            timeoutMs,
+            stdout: readOut(proc.collected.stdout) ?? { text: '', truncated: false },
+            stderr: readOut(proc.collected.stderr) ?? { text: '', truncated: false },
+          }
+        },
+      }))
+    },
+    'dsh-better-tools: register gitbash tool',
   )
 
   // ── Model-facing tool ────────────────────────────────────────────────────

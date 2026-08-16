@@ -54,6 +54,47 @@ export interface BetterToolsToolsService {
   register(tool: unknown): () => void
 }
 
+/** One captured stream (stdout/stderr) as the subprocess handle reports it. */
+export interface BetterToolsStreamRead {
+  text: string
+  lossy: boolean
+  spillPath?: string
+}
+
+/** Spawn options accepted by ctx.subprocess (structural subset). */
+export interface BetterToolsSpawnOptions {
+  argv: string[]
+  cwd?: string
+  stdio?: {
+    stdin?: string
+    stdout?: { maxBytes: number; spill?: { maxBytes: number } }
+    stderr?: { maxBytes: number; spill?: { maxBytes: number } }
+  }
+  graceMs?: number
+  signal?: unknown
+}
+
+/** Handle returned by ctx.subprocess.spawn (structural subset). */
+export interface BetterToolsSpawnHandle {
+  done: Promise<{ exitCode: number; signal: string | null }>
+  collected: {
+    stdout: { readFrom(offset: number): BetterToolsStreamRead } | undefined
+    stderr: { readFrom(offset: number): BetterToolsStreamRead } | undefined
+  }
+  terminate(): void
+}
+
+/** The subprocess service face (mirror of @deepseek-ai/dsh-subprocess — the gitbash tool's spawn seam). */
+export interface BetterToolsSubprocessService {
+  resolveExecutable(name: string): Promise<string>
+  spawn(options: BetterToolsSpawnOptions): BetterToolsSpawnHandle
+}
+
+/** The file-sandbox policy service face (mirror of the harness policy — used only for the workspace-root fallback). */
+export interface BetterToolsSandboxPolicyService {
+  workspaceRoot?: string
+}
+
 /** Shell preference: which shell the agent is told to prefer for shell commands. */
 export type ShellPreference = 'off' | 'gitbash' | 'pwsh'
 
@@ -114,6 +155,8 @@ declare module 'cordis' {
     slots: BetterToolsSlotsService
     settings: BetterToolsSettingsService
     systemPrompt: BetterToolsSystemPromptService
+    subprocess: BetterToolsSubprocessService
+    sandboxPolicy: BetterToolsSandboxPolicyService
     /**
      * The host service this plugin provides (see src/index.ts). On the host
      * plane it is a real service; on the client plane it is undefined (the

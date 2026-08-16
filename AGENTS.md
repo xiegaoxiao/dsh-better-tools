@@ -51,12 +51,12 @@ dsh plugin --profile web add dsh-better-tools
 | 文件 | 角色 | 改它做什么 |
 | --- | --- | --- |
 | `src/context-types.ts` | 结构化的 `Context` 增强（`declare module 'cordis'`） | 新增/修改服务面、工具注册、slot 用法时同步这里 |
-| `src/index.ts` | host 半 | 加 host 服务、模型工具、Web 路由 |
+| `src/index.ts` | host 半 | 加 host 服务、模型工具、Web 路由、**全局 `gitbash` 工具** |
 | `src/client/index.tsx` | client 半 | 加客户端 UI、slot 注册、状态订阅 |
 | `cordis.patch.yml` | bundle 挂载行 | 一般不动 |
 | `tsdown.config.ts` | 双产物构建 | 加 client 依赖 / 懒加载 chunk 时改 |
 | `package.json` | 包清单 + `dsh.*` 声明 | 加 peer/dev 依赖、bump 版本 |
-| `presets/cordis-gitbash/` | vendor 的 agent 预设（自定义 bash 工具等） | 改预设行为后同步更新这里 |
+| `presets/cordis-gitbash/` | vendor 的 agent 预设（技能目录 + 预设内的 bash 工具等） | 改预设行为后同步更新这里 |
 | `scripts/install-preset.*` | 预设部署脚本 | 改部署流程时 |
 | `install.md` | AI 给 AI 的安装指南 | 安装/部署流程变化时同步 |
 | `README.md` | AI 向仓库概览 | 能力/约束变化时同步 |
