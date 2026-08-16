@@ -9,7 +9,7 @@
 # cordis.patch.yml 挂载行。符合仓库硬约束：不修改 DSH 源码。
 #
 # 用法（远端直取）：
-#   irm https://raw.githubusercontent.com/<owner>/<repo>/main/scripts/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/xiegaoxiao/dsh-better-tools/main/scripts/install.ps1 | iex
 # 或本地：
 #   powershell -ExecutionPolicy Bypass -File scripts/install.ps1 [-Version 0.1.0] [-Restart] [-DryRun]
 # =============================================================================

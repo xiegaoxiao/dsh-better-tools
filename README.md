@@ -96,10 +96,10 @@ dsh-better-tools/
 
 ```bash
 # macOS / Linux / Windows Git Bash
-curl -fsSL https://raw.githubusercontent.com/<owner>/dsh-better-tools/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/xiegaoxiao/dsh-better-tools/main/scripts/install.sh | bash
 
 # Windows（PowerShell 5.1+ / pwsh）
-irm https://raw.githubusercontent.com/<owner>/dsh-better-tools/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/xiegaoxiao/dsh-better-tools/main/scripts/install.ps1 | iex
 ```
 
 等价手动命令（与一键脚本一致）：
