@@ -1,0 +1,2 @@
+name: 标准模式+gitbash
+description: 基于 cordis 预设，加入「优先使用 Git Bash 而非 PowerShell」的提示词偏好，并注册一个真正运行 Git Bash 的 bash 工具（Windows 下生效，非受限运行）。

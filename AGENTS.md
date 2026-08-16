@@ -79,8 +79,8 @@ dsh plugin --profile web add dsh-better-tools
 
 ### 4.4 加客户端 UI / slot（client 半）
 
-- 最简单：在 `src/client/index.tsx` 里再挂一个 portal 根（本仓库 `StatusWidget` 就是例子）；
-- 正规：`ctx.slots.register({ name: 'xxx.slot', ... }, Component)`——**必须先确认该 slot 已声明**（`ctx.slots.snapshot()` 可查），注册进未声明 slot 会在加载期 throw；
+- 最简单：在 `src/client/index.tsx` 里再挂一个 portal 根（本仓库早期版本 `StatusWidget` 就是例子）；
+- 正规：`ctx.slots.register({ name: 'xxx.slot', ... }, Component)`——**必须先确认该 slot 已声明**（`ctx.slots.snapshot()` 可查），注册进未声明 slot 会在加载期 throw；load 顺序问题用 `ctx.slots.inject(slotName, () => register(...))` 兜底（本仓库 `BetterToolsButton` 就是这样注册进 `sidebar.footer.action` 的，参考官方 `dsh-client-ui-cordis` 的同款写法）；
 - 状态订阅用 client runtime 的 `sessions` / `connection` 等服务的 `getSnapshot() + subscribe()`（uSES 模式）。
 
 ### 4.5 加新的 `@deepseek-ai/*` 平台包依赖
@@ -101,7 +101,7 @@ npm run build       # 产物：lib/index.js + lib/client.js(+map) + lib/types/*.
 - [ ] `lib/client.js` 首行是 `window.__ModuleLoader__.load({ id: "dsh-better-tools", ... })`（`id` 与 `package.json name` 一致）
 - [ ] `lib/client.js` 里没有 `require("node:...")` 或非平台 `@deepseek-ai/*` 值导入
 - [ ] `lib/index.js` 外部化 `@deepseek-ai/dsh-tools`（运行时从 profile 解析）
-- [ ] 真实挂载后：左下角徽标 green、`better_tools_ping` 工具可用、`/better-tools/api/ping` 返回 JSON
+- [ ] 真实挂载后：侧边栏 footer 出现 🧰 按钮（绿点 = 回路正常）、`better_tools_ping` 工具可用、`/better-tools/api/ping` 返回 JSON
 
 ## 6. 参考
 

@@ -47,8 +47,11 @@
     "lib/types/**/*.d.ts",
     "src",
     "cordis.patch.yml",
+    "presets",
     "scripts/install.sh",
     "scripts/install.ps1",
+    "scripts/install-preset.sh",
+    "scripts/install-preset.ps1",
     "README.md",
     "AGENTS.md",
     "LICENSE"
@@ -65,6 +68,10 @@
     "@deepseek-ai/dsh-host-webserver": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-settings": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-system-prompt": "^0.1.0-rc.6",
+    "@deepseek-ai/schemastery": "^3.18.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
@@ -75,7 +82,19 @@
     "@deepseek-ai/dsh-client-ui-slots": {
       "optional": true
     },
+    "@deepseek-ai/dsh-client-ui-primitives": {
+      "optional": true
+    },
     "@deepseek-ai/dsh-host-webserver": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-settings": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-system-prompt": {
+      "optional": true
+    },
+    "@deepseek-ai/schemastery": {
       "optional": true
     }
   },
@@ -86,6 +105,10 @@
     "@deepseek-ai/dsh-host-webserver": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-settings": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-system-prompt": "^0.1.0-rc.6",
+    "@deepseek-ai/schemastery": "^3.18.1",
     "@types/node": "^24.0.0",
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.1",

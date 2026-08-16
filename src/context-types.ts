@@ -26,6 +26,8 @@ export interface BetterToolsHttpRequest {
   url?: string
   method?: string
   headers: Record<string, string | string[] | undefined>
+  /** Event-stream face for body reads (structural; host handlers cast to node's IncomingMessage). */
+  on(event: string, listener: (...args: unknown[]) => void): unknown
 }
 
 /** The response face route handlers write to (structural subset of node's ServerResponse). */
@@ -52,9 +54,47 @@ export interface BetterToolsToolsService {
   register(tool: unknown): () => void
 }
 
-/** The client slots service face (mirror of the runtime SlotRegistry — only the read used here). */
+/** Shell preference: which shell the agent is told to prefer for shell commands. */
+export type ShellPreference = 'off' | 'gitbash' | 'pwsh'
+
+/** The settings service face (mirror of @deepseek-ai/dsh-settings — the surface this plugin uses). */
+export interface BetterToolsSettingsService {
+  get(ns: string): Record<string, unknown> | undefined
+  register(ns: string, schema: unknown): () => void
+  update(ns: string, patch: Record<string, unknown>): Promise<unknown>
+}
+
+/** One system-prompt section (mirror of @deepseek-ai/dsh-system-prompt). */
+export interface BetterToolsPromptSection {
+  name: string
+  order: number
+  text: string
+}
+
+/** The systemPrompt service face (mirror of @deepseek-ai/dsh-system-prompt — the surface this plugin uses). */
+export interface BetterToolsSystemPromptService {
+  variable(name: string, provider: () => string | undefined): () => void
+  section(section: BetterToolsPromptSection): () => void
+}
+
+/** One client slot registration (structural subset of the runtime register options). */
+export interface BetterToolsSlotRegistration {
+  name: string
+  /** List/keyed slots require an id or key respectively. */
+  id?: string
+  priority?: number
+  order?: number
+  /** Owner props injected into the occupant component by the renderer. */
+  inject?: () => Record<string, unknown>
+}
+
+/** The client slots service face (mirror of the runtime SlotRegistry — the surface this plugin uses). */
 export interface BetterToolsSlotsService {
   snapshot(root?: string): readonly unknown[]
+  /** Wait for a slot declaration, then run the callback (which usually registers an occupant). Returns a disposer. */
+  inject(key: string, callback: () => void | (() => void)): () => void
+  /** Register one occupant for a declared slot; returns a disposer. */
+  register(options: BetterToolsSlotRegistration, component: unknown): () => void
 }
 
 /** The small host service this plugin provides under `ctx.betterTools`. */
@@ -72,6 +112,8 @@ declare module 'cordis' {
     webServer: BetterToolsWebServer
     tools: BetterToolsToolsService
     slots: BetterToolsSlotsService
+    settings: BetterToolsSettingsService
+    systemPrompt: BetterToolsSystemPromptService
     /**
      * The host service this plugin provides (see src/index.ts). On the host
      * plane it is a real service; on the client plane it is undefined (the

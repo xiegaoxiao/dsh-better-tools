@@ -9,9 +9,9 @@
 | **host 半** | 提供 `ctx.betterTools` 服务 | `src/index.ts` |
 | **host 半** | 注册模型工具 `better_tools_ping`（所有会话可用） | `src/index.ts` |
 | **host 半** | 挂载 JSON 路由 `/better-tools/api/ping` | `src/index.ts` |
-| **client 半** | 页面左下角挂一个小 React 徽标，并 ping host 路由验证 host↔client 回路 | `src/client/index.tsx` |
+| **client 半** | 在侧边栏 footer 注册一个「设置式」独立按钮（`sidebar.footer.action` 槽），点击弹状态面板，ping host 路由验证 host↔client 回路 | `src/client/index.tsx` |
 
-装好后打开任意 DSH 会话：左下角出现 **🧰 dsh-better-tools v0.1.0** 徽标（绿 = host 回路正常），模型还能调用 `better_tools_ping` 工具。
+装好后打开任意 DSH 会话：侧边栏底部（设置按钮旁）出现 **🧰 better-tools** 独立按钮（绿点 = host 回路正常），点击弹出状态面板；模型还能调用 `better_tools_ping` 工具。
 
 ## 为什么做这个脚手架
 
@@ -78,10 +78,14 @@ dsh-better-tools/
 │   ├── context-types.ts   # 结构化的 cordis Context 增强（双半共享，零 Node 依赖）
 │   ├── index.ts           # host 半：服务 + 工具 + 路由
 │   └── client/
-│       └── index.tsx      # client 半：React 徽标 + host ping
+│       └── index.tsx      # client 半：侧边栏按钮 + 状态面板 + host ping
 ├── scripts/
-│   ├── install.sh         # 一键安装（macOS / Linux / Git Bash）
-│   └── install.ps1        # 一键安装（Windows PowerShell）
+│   ├── install.sh         # 一键安装插件（macOS / Linux / Git Bash）
+│   ├── install.ps1        # 一键安装插件（Windows PowerShell）
+│   ├── install-preset.sh  # 一键部署 cordis-gitbash 预设（macOS / Linux / Git Bash）
+│   └── install-preset.ps1 # 一键部署 cordis-gitbash 预设（Windows PowerShell）
+├── presets/
+│   └── cordis-gitbash/    # vendor 的预设副本（含 tool-gitbash-v2.mjs 终端卡片修复）
 ├── AGENTS.md              # 面向 AI / 插件开发者的接入文档
 └── README.md              # 本文件
 ```
@@ -109,10 +113,52 @@ npx -y --package @deepseek-ai/dsh dsh plugin --profile web add dsh-better-tools
 
 > 从源码安装（开发用）：`git clone` 后 `npm install && npm run build`，把 `~/.dsh/profiles/web/package.json` 的依赖写 `"dsh-better-tools": "link:<克隆目录绝对路径>"`，并在该 profile 的 `cordis.patch.yml` 追加 `- insert: [{ id: better-tools, name: 'dsh-better-tools' }]`，然后 `pnpm install`。
 
+## 跨机器部署
+
+「更好的 shell 体验」由**两个平面**组成，分别分发：
+
+### ① 插件（host/client 双半）——随 npm 包走
+
+发布到 npm 后，任意机器一条命令装好并自动挂载：
+
+```bash
+dsh plugin --profile web add dsh-better-tools
+```
+
+- 装完**重启一次 `dsh web`**（host 半改动生效），然后硬刷新浏览器。
+- 侧边栏 🧰 better-tools 按钮、Shell 优先开关、host 路由、全局 shell 偏好提示全部随之生效。
+- Shell 偏好持久化在各机器自己的 `~/.dsh/settings.yaml`，默认 `gitbash`（Windows 语义；macOS/Linux 建议切到「关闭」）。
+
+### ② cordis-gitbash 预设（含 bash 终端卡片修复）——用部署脚本走
+
+bash 工具的终端卡片渲染在**预设文件**（`tool-gitbash-v2.mjs`）里，不属于 npm 插件。本包 vendor 了一份到 `presets/cordis-gitbash/`，用部署脚本拷到目标机器：
+
+```bash
+# macOS / Linux / Windows Git Bash
+bash <repo>/scripts/install-preset.sh
+
+# Windows PowerShell
+powershell -ExecutionPolicy Bypass -File <repo>/scripts/install-preset.ps1
+```
+
+从 npm 安装的包内直接调用（包已含 `presets/` 与脚本）：
+
+```bash
+# Git Bash
+bash ~/.dsh/profiles/web/node_modules/dsh-better-tools/scripts/install-preset.sh
+
+# Windows PowerShell
+powershell -ExecutionPolicy Bypass -File `
+  "$env:USERPROFILE\.dsh\profiles\web\node_modules\dsh-better-tools\scripts\install-preset.ps1"
+```
+
+- 已存在同目录会先带时间戳备份。
+- 预设按**会话**加载：新开会话（选 cordis-gitbash）即生效，无需重启 `dsh web`。
+
 ## 验证
 
-1. **client 半**：页面左下角出现 🧰 徽标；徽标第三行显示 host ping 结果：
-   - 绿 `host: dsh-better-tools@0.1.0` → host↔client 回路通
+1. **client 半**：侧边栏底部（设置按钮旁）出现 🧰 按钮；按钮上的状态点 + 点击弹出的面板显示 host ping 结果：
+   - 绿 `host ok · dsh-better-tools@0.1.0` → host↔client 回路通
    - 红/黄 → 见「常见问题」
 2. **host 半工具**：任意会话让 Agent 调用 `better_tools_ping`，返回 `{ ok: true, plugin: "dsh-better-tools", version: "0.1.0", echo: "pong" }`
 3. **host 半路由**：浏览器开 `http://127.0.0.1:3080/better-tools/api/ping`，返回 `{"ok":true,"name":"dsh-better-tools","version":"0.1.0","time":...}`
@@ -137,8 +183,8 @@ npm run watch      # tsdown --watch
 | --- | --- |
 | 报 `Ignored build scripts` | pnpm 11 拦构建脚本；跑 `pnpm approve-builds --all` |
 | 报 `minimum release age` / 版本不足 24h | 装的版本发布不足 24h；等 24h 或重跑 |
-| 徽标显示 `host error: HTTP 404` | host 半没挂上（可能双挂载或只装了 client）。检查 `~/.dsh/profiles/web/cordis.patch.yml` 是否有旧手动挂载行 |
-| 页面出现两个徽标 | 双挂载：bundle 通道 + 手动挂载行同时存在；删掉 profile 里手写的 `better-tools` insert 行 |
+| 按钮/面板显示 `host error: HTTP 404` | host 半没挂上（可能双挂载或只装了 client）。检查 `~/.dsh/profiles/web/cordis.patch.yml` 是否有旧手动挂载行 |
+| 侧边栏出现两个 🧰 按钮 | 双挂载：bundle 通道 + 手动挂载行同时存在；删掉 profile 里手写的 `better-tools` insert 行 |
 | 找不到 profile 目录 | 先跑一次 `dsh web` 初始化 `~/.dsh/profiles/web` |
 
 ## 许可
