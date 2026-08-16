@@ -73,6 +73,8 @@ dsh plugin --profile web add dsh-better-tools
 - `output.schema` 的必填字段写 `required: true`；`render(args, value): ContentBlock[]` 是纯文本投影，规范值留在 `execute` 的返回值；
 - 真实插件要把工具**绑定到调用会话**：`execute` 第二参 `exec` 上的 `exec.agent.session.id` 作为作用域。
 
+> ⚠️ **工具依赖 host 服务（如 `ctx.subprocess`）时，不要用 `ctx.get('subprocess')` 判断后注册。** host 组合的激活顺序是**服务可用性驱动**（`dsh-base` patch 明说 "Row order carries no load semantics"），插件行顺序不保证依赖先激活；`ctx.get` 默认 strict，服务 fiber 未 active 时返回 `undefined`，工具会**静默不注册**（`gitbash` 工具就因此长期只在 `cordis-gitbash` 预设下可用、默认 `standard` 预设下一直缺失）。正确姿势是嵌套 `ctx.inject(['subprocess'], (subCtx) => ctx.tools.register(...))`——它会等依赖激活后再执行回调，任何启动顺序都可靠。**必须传数组**：字符串形式 `ctx.inject('subprocess', ...)` 会被 `Inject.resolve` 用 `Object.keys` 拆成索引键而永不触发（这正是本仓库注释里 "nested ctx.inject unreliable" 的真正原因）。参考官方 `dsh-bash-sandbox` 的 `static inject = ["subprocess"]` 硬注入惯例。
+
 ### 4.2 加一个 Web 路由（host 半）
 
 `ctx.webServer.register({ kind: 'prefix', path: '/better-tools/xxx', handler })`。真实插件要加浏览器信任围栏（参考 DSH 官方 `/api` gateway 的信任模型），并且所有操作按 `sessionId` 限定在会话 cwd 内。

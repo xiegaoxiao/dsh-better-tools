@@ -165,6 +165,16 @@ declare module 'cordis' {
     betterTools: BetterToolsService
     /** Register a lifecycle callback (DSH-vendored cordis): runs at plugin activation; its returned cleanup runs at disposal. */
     effect(fn: () => void | (() => void), label?: string): void
+    /**
+     * Start a nested plugin that waits for the named services to be available
+     * (DSH-vendored cordis). Unlike a bare `ctx.get(...)` — which under strict
+     * mode returns undefined when the providing fiber is not yet active — this
+     * defers the callback until every service in `inject` is active, so it is
+     * the reliable way to register a tool that depends on a host service whose
+     * activation order is not guaranteed. Pass an ARRAY of names: the string
+     * form breaks `Inject.resolve`.
+     */
+    inject(inject: string[], callback: (ctx: Context, config?: unknown) => void | (() => void)): void
   }
 }
 

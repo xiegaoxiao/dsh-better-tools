@@ -260,115 +260,125 @@ export function apply(ctx: Context): void {
   // profile). This is what makes the `gitbash` shell preference actually work
   // on the default `standard` preset: a real Git Bash, spawned directly and
   // unconfined, with the same terminal-card rendering as the official pwsh.
-  ctx.effect(
-    () => {
-      const subprocess = ctx.get('subprocess')
-      if (subprocess === undefined) return
-      let bashResolve: Promise<string> | undefined
-      const getBash = (): Promise<string> => {
-        bashResolve ??= resolveGitBash(subprocess)
-        return bashResolve
-      }
-      return ctx.tools.register(defineTool({
-        name: 'gitbash',
-        description:
-          'Execute a shell command via real Git Bash (`bash -c`) and return its stdout/stderr. '
-          + 'Unlike the standard `bash` tool (which on Windows routes through the PowerShell executor), '
-          + 'this tool spawns actual Git Bash directly, so bash/POSIX syntax works everywhere. '
-          + 'Use bash/POSIX style (`ls`, `grep`, `sed`, `cat`, `&&`, pipes, `$VAR`) and POSIX-style paths. '
-          + 'Each call runs in a fresh Git Bash process: no state (cwd, variables, functions) persists between calls — '
-          + 'pass `workdir` instead of using `cd`. Non-zero exits are reported as `[exit code: N]`. '
-          + 'IMPORTANT: Git Bash (MSYS2) cannot start under the harness file sandbox (its signal pipe is denied by the '
-          + 'restricted token), so this tool runs UNCONFINED with full filesystem access, like your own terminal — '
-          + 'only touch files you are meant to touch. Long output is truncated to its tail; the full output is saved '
-          + 'to a file whose path is reported when available.',
-        parameters: {
-          command: { type: 'string', description: 'The bash command to execute via Git Bash.', required: true },
-          description: { type: 'string', description: 'Clear, concise description of what this command does in active voice, 5-10 words. Examples: "List files in current directory"; "Show git status"; "Count lines in a file".', required: true },
-          workdir: { type: 'string', description: 'Working directory for this command. Defaults to the session workspace; a relative path is resolved against it.' },
-          timeoutMs: { type: 'number', description: 'Timeout in milliseconds; the process tree is killed on expiry. Defaults to 120000.' },
-        },
-        output: {
-          schema: {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              exitCode: { oneOf: [{ type: 'integer' }, { type: 'null' }], required: true, description: 'Process exit code, or null when killed by a signal.' },
-              signal: { oneOf: [{ type: 'string' }, { type: 'null' }], required: true, description: 'Killing signal name, or null when the process exited.' },
-              timedOut: { type: 'boolean', required: true, description: 'Whether the command hit the timeout.' },
-              aborted: { type: 'boolean', required: true, description: 'Whether the call was aborted.' },
-              timeoutMs: { type: 'number', required: true, description: 'The applied timeout in milliseconds.' },
-              stdout: { type: 'object', required: true, additionalProperties: false, properties: {
-                text: { type: 'string', required: true, description: 'Captured stdout text.' },
-                truncated: { type: 'boolean', required: true, description: 'Whether output exceeded the in-memory cap.' },
-                spillPath: { type: 'string', description: 'Path to the spilled full output when truncated.' },
-              } },
-              stderr: { type: 'object', required: true, additionalProperties: false, properties: {
-                text: { type: 'string', required: true, description: 'Captured stderr text.' },
-                truncated: { type: 'boolean', required: true, description: 'Whether output exceeded the in-memory cap.' },
-                spillPath: { type: 'string', description: 'Path to the spilled full output when truncated.' },
-              } },
-            },
+  //
+  // IMPORTANT: do NOT resolve subprocess with a bare `ctx.get('subprocess')`
+  // inside `apply`. The host composition activates rows by service
+  // availability, not row order — so when this plugin's apply runs, the
+  // subprocess fiber may not be active yet, `ctx.get` (strict) returns
+  // undefined, and the gitbash tool silently never registers (the exact bug
+  // this line fixes). Waiting through a nested `ctx.inject(['subprocess'], …)`
+  // defers registration until subprocess is actually available, on every boot
+  // order. Note the ARRAY argument: the string form `ctx.inject('subprocess', …)`
+  // breaks `Inject.resolve` (it Object.keys the string into index keys), which
+  // is why this plugin's own comment history calls nested inject "unreliable".
+  ctx.inject(['subprocess'], (subCtx) => {
+    const subprocess = subCtx.get('subprocess')
+    if (subprocess === undefined) return
+    let bashResolve: Promise<string> | undefined
+    const getBash = (): Promise<string> => {
+      bashResolve ??= resolveGitBash(subprocess)
+      return bashResolve
+    }
+    return ctx.tools.register(defineTool({
+      name: 'gitbash',
+      description:
+        'Execute a shell command via real Git Bash (`bash -c`) and return its stdout/stderr. '
+        + 'Unlike the standard `bash` tool (which on Windows routes through the PowerShell executor), '
+        + 'this tool spawns actual Git Bash directly, so bash/POSIX syntax works everywhere. '
+        + 'Use bash/POSIX style (`ls`, `grep`, `sed`, `cat`, `&&`, pipes, `$VAR`) and POSIX-style paths. '
+        + 'Each call runs in a fresh Git Bash process: no state (cwd, variables, functions) persists between calls — '
+        + 'pass `workdir` instead of using `cd`. Non-zero exits are reported as `[exit code: N]`. '
+        + 'IMPORTANT: Git Bash (MSYS2) cannot start under the harness file sandbox (its signal pipe is denied by the '
+        + 'restricted token), so this tool runs UNCONFINED with full filesystem access, like your own terminal — '
+        + 'only touch files you are meant to touch. Long output is truncated to its tail; the full output is saved '
+        + 'to a file whose path is reported when available.',
+      parameters: {
+        command: { type: 'string', description: 'The bash command to execute via Git Bash.', required: true },
+        description: { type: 'string', description: 'Clear, concise description of what this command does in active voice, 5-10 words. Examples: "List files in current directory"; "Show git status"; "Count lines in a file".', required: true },
+        workdir: { type: 'string', description: 'Working directory for this command. Defaults to the session workspace; a relative path is resolved against it.' },
+        timeoutMs: { type: 'number', description: 'Timeout in milliseconds; the process tree is killed on expiry. Defaults to 120000.' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            exitCode: { oneOf: [{ type: 'integer' }, { type: 'null' }], required: true, description: 'Process exit code, or null when killed by a signal.' },
+            signal: { oneOf: [{ type: 'string' }, { type: 'null' }], required: true, description: 'Killing signal name, or null when the process exited.' },
+            timedOut: { type: 'boolean', required: true, description: 'Whether the command hit the timeout.' },
+            aborted: { type: 'boolean', required: true, description: 'Whether the call was aborted.' },
+            timeoutMs: { type: 'number', required: true, description: 'The applied timeout in milliseconds.' },
+            stdout: { type: 'object', required: true, additionalProperties: false, properties: {
+              text: { type: 'string', required: true, description: 'Captured stdout text.' },
+              truncated: { type: 'boolean', required: true, description: 'Whether output exceeded the in-memory cap.' },
+              spillPath: { type: 'string', description: 'Path to the spilled full output when truncated.' },
+            } },
+            stderr: { type: 'object', required: true, additionalProperties: false, properties: {
+              text: { type: 'string', required: true, description: 'Captured stderr text.' },
+              truncated: { type: 'boolean', required: true, description: 'Whether output exceeded the in-memory cap.' },
+              spillPath: { type: 'string', description: 'Path to the spilled full output when truncated.' },
+            } },
           },
-          render: (_args, value) => [{
-            type: 'text',
-            text: renderGitBashResult(value as Parameters<typeof renderGitBashResult>[0]),
-          }],
         },
-        presentCall: (args) => {
-          const a = args as { command?: string; description?: string; workdir?: string }
+        render: (_args, value) => [{
+          type: 'text',
+          text: renderGitBashResult(value as Parameters<typeof renderGitBashResult>[0]),
+        }],
+      },
+      presentCall: (args) => {
+        const a = args as { command?: string; description?: string; workdir?: string }
+        return {
+          card: 'terminal',
+          title: a.command ?? '',
+          ...(a.description !== undefined && a.description !== '' ? { description: a.description } : {}),
+          ...(a.workdir !== undefined && a.workdir !== '' ? { cwd: a.workdir } : {}),
+        }
+      },
+      presentResult: (args, result) => {
+        const content = Array.isArray(result.content) && result.content.length === 1 ? result.content[0] : undefined
+        if (content === undefined || content.type !== 'text') return undefined
+        const raw = content.text
+        if (result.isError) {
           return {
-            card: 'terminal',
-            title: a.command ?? '',
-            ...(a.description !== undefined && a.description !== '' ? { description: a.description } : {}),
-            ...(a.workdir !== undefined && a.workdir !== '' ? { cwd: a.workdir } : {}),
+            card: 'generic',
+            content: [{ type: 'text', text: `\`\`\`console\n${raw.replace(/\n+$/, '')}\n\`\`\`` }],
           }
-        },
-        presentResult: (args, result) => {
-          const content = Array.isArray(result.content) && result.content.length === 1 ? result.content[0] : undefined
-          if (content === undefined || content.type !== 'text') return undefined
-          const raw = content.text
-          if (result.isError) {
-            return {
-              card: 'generic',
-              content: [{ type: 'text', text: `\`\`\`console\n${raw.replace(/\n+$/, '')}\n\`\`\`` }],
-            }
-          }
-          const { body, ...exit } = parseExitStatus(raw)
-          return { card: 'terminal', output: body, ...exit }
-        },
-        execute: async (args, exec) => {
-          const a = args as { command?: unknown; description?: unknown; workdir?: unknown; timeoutMs?: unknown }
-          const e = exec as { agent?: { session?: { header?: { cwd?: string } } }; signal: { aborted: boolean } }
-          if (typeof a.command !== 'string' || a.command.trim().length === 0) throw new Error('invalid command: expected a non-empty string')
-          if (typeof a.description !== 'string' || a.description.trim().length === 0) throw new Error('invalid description: expected a non-empty string')
-          if (a.timeoutMs !== undefined && (typeof a.timeoutMs !== 'number' || !Number.isFinite(a.timeoutMs) || a.timeoutMs <= 0)) {
-            throw new Error('invalid timeoutMs: expected a positive number')
-          }
-          const bashExe = await getBash()
-          const timeoutMs = a.timeoutMs !== undefined ? Math.min(Math.floor(a.timeoutMs), 3600000) : 120000
-          const headerCwd = e.agent?.session?.header?.cwd
-          let workdir = typeof a.workdir === 'string' && a.workdir.length > 0 ? a.workdir : headerCwd
-          if (workdir === undefined) {
-            const policySvc = ctx.get('sandboxPolicy') as { workspaceRoot?: string } | undefined
-            if (policySvc !== undefined) workdir = policySvc.workspaceRoot
-          }
-          if (workdir === undefined) throw new Error('no working directory: pass `workdir` or run inside a session')
-          if (!isAbsoluteWin(workdir) && headerCwd !== undefined) workdir = joinWinPath(headerCwd, workdir)
+        }
+        const { body, ...exit } = parseExitStatus(raw)
+        return { card: 'terminal', output: body, ...exit }
+      },
+      execute: async (args, exec) => {
+        const a = args as { command?: unknown; description?: unknown; workdir?: unknown; timeoutMs?: unknown }
+        const e = exec as { agent?: { session?: { header?: { cwd?: string } } }; signal: { aborted: boolean } }
+        if (typeof a.command !== 'string' || a.command.trim().length === 0) throw new Error('invalid command: expected a non-empty string')
+        if (typeof a.description !== 'string' || a.description.trim().length === 0) throw new Error('invalid description: expected a non-empty string')
+        if (a.timeoutMs !== undefined && (typeof a.timeoutMs !== 'number' || !Number.isFinite(a.timeoutMs) || a.timeoutMs <= 0)) {
+          throw new Error('invalid timeoutMs: expected a positive number')
+        }
+        const bashExe = await getBash()
+        const timeoutMs = a.timeoutMs !== undefined ? Math.min(Math.floor(a.timeoutMs), 3600000) : 120000
+        const headerCwd = e.agent?.session?.header?.cwd
+        let workdir = typeof a.workdir === 'string' && a.workdir.length > 0 ? a.workdir : headerCwd
+        if (workdir === undefined) {
+          const policySvc = ctx.get('sandboxPolicy') as { workspaceRoot?: string } | undefined
+          if (policySvc !== undefined) workdir = policySvc.workspaceRoot
+        }
+        if (workdir === undefined) throw new Error('no working directory: pass `workdir` or run inside a session')
+        if (!isAbsoluteWin(workdir) && headerCwd !== undefined) workdir = joinWinPath(headerCwd, workdir)
 
-          const argv = [bashExe, '-c', a.command]
-          let proc: BetterToolsSpawnHandle
-          try {
-            proc = subprocess.spawn({
-              argv,
-              cwd: workdir,
-              stdio: {
-                stdin: 'ignore',
-                stdout: { maxBytes: 400000, spill: { maxBytes: 4000000 } },
-                stderr: { maxBytes: 400000, spill: { maxBytes: 4000000 } },
-              },
-              graceMs: 3000,
-              signal: e.signal,
+        const argv = [bashExe, '-c', a.command]
+        let proc: BetterToolsSpawnHandle
+        try {
+          proc = subprocess.spawn({
+            argv,
+            cwd: workdir,
+            stdio: {
+              stdin: 'ignore',
+              stdout: { maxBytes: 400000, spill: { maxBytes: 4000000 } },
+              stderr: { maxBytes: 400000, spill: { maxBytes: 4000000 } },
+            },
+            graceMs: 3000,
+            signal: e.signal,
             })
           } catch (err) {
             throw new Error('failed to start Git Bash: ' + String(err && err instanceof Error ? err.message : err))
@@ -411,9 +421,7 @@ export function apply(ctx: Context): void {
           }
         },
       }))
-    },
-    'dsh-better-tools: register gitbash tool',
-  )
+  })
 
   // ── Model-facing tool ────────────────────────────────────────────────────
   // A sample tool: proves the tool registry wiring. A real plugin would bind
