@@ -71,11 +71,11 @@ dsh plugin --profile web add dsh-better-tools
 
 - `parameters` 里**可选字段省略 `required`**（dsh-tools 约定：只写 `required: true`，缺省即可选——`required: false` 会类型报错）；
 - `output.schema` 的必填字段写 `required: true`；`render(args, value): ContentBlock[]` 是纯文本投影，规范值留在 `execute` 的返回值；
-- 真实插件要把工具**绑定到调用会话**：`execute` 第二参 `exec` 上的 `exec.agent.session.id` 作为作用域（参考 DSH-better-sidebar 的 `terminal_*` 工具）。
+- 真实插件要把工具**绑定到调用会话**：`execute` 第二参 `exec` 上的 `exec.agent.session.id` 作为作用域。
 
 ### 4.2 加一个 Web 路由（host 半）
 
-`ctx.webServer.register({ kind: 'prefix', path: '/better-tools/xxx', handler })`。真实插件要套 DSH-better-sidebar 那套浏览器信任围栏（`trust-fence.ts`），并且所有操作按 `sessionId` 限定在会话 cwd 内。
+`ctx.webServer.register({ kind: 'prefix', path: '/better-tools/xxx', handler })`。真实插件要加浏览器信任围栏（参考 DSH 官方 `/api` gateway 的信任模型），并且所有操作按 `sessionId` 限定在会话 cwd 内。
 
 ### 4.3 加 host 服务（host 半）
 

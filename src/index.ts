@@ -163,7 +163,7 @@ export function apply(ctx: Context): void {
   // ── Model-facing tool ────────────────────────────────────────────────────
   // A sample tool: proves the tool registry wiring. A real plugin would bind
   // to the calling agent's session through `exec.agent.session.id` and scope
-  // every operation to it (see DSH-better-sidebar's terminal_* tools).
+  // every operation to it.
   ctx.effect(
     () => ctx.tools.register(defineTool({
       name: 'better_tools_ping',
@@ -211,8 +211,8 @@ export function apply(ctx: Context): void {
   //   GET  /better-tools/api/ping  → host identity/health
   //   GET  /better-tools/api/shell → { ok, shell, options } (current preference)
   //   PUT  /better-tools/api/shell → body { shell } → persists the preference
-  // A real plugin would gate these behind the same browser-trust fence as the
-  // /api gateway (see DSH-better-sidebar's trust-fence.ts).
+  // A real plugin would gate these behind the same browser-trust fence the
+  // official /api gateway applies to its own routes.
   ctx.effect(
     () => ctx.webServer.register({
       kind: 'prefix',
