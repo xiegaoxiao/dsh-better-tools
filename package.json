@@ -54,6 +54,7 @@
     "scripts/install-preset.ps1",
     "README.md",
     "AGENTS.md",
+    "install.md",
     "LICENSE"
   ],
   "scripts": {

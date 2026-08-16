@@ -1,192 +1,96 @@
-# dsh-better-tools：DSH 双半插件脚手架（host/client dual-half）
+# dsh-better-tools
 
-一个**最小可用的 DeepSeek Harness (DSH) Web 插件脚手架**，复刻 [DSH-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) 的架构——单一 npm 包、**host/client 双半结构**、靠 `dsh.bundle.patch` + profile bundles 自动挂载，**不修改 DSH 源码**。
+DSH (DeepSeek Harness) 双半插件 + vendor 的 agent 预设，打包为一个 npm 包，提供统一的「better shell」体验。
 
-它演示了宿主插件三种典型的贡献方式 + 客户端插件一种：
+本仓库面向 **AI 维护者**：本文档是技术事实与操作命令，不含用户向宣传。**安装/部署请走 `install.md`**（AI 给 AI 的安装指南）。
 
-| 半边 | 贡献 | 文件 |
-| --- | --- | --- |
-| **host 半** | 提供 `ctx.betterTools` 服务 | `src/index.ts` |
-| **host 半** | 注册模型工具 `better_tools_ping`（所有会话可用） | `src/index.ts` |
-| **host 半** | 挂载 JSON 路由 `/better-tools/api/ping` | `src/index.ts` |
-| **client 半** | 在侧边栏 footer 注册一个「设置式」独立按钮（`sidebar.footer.action` 槽），点击弹状态面板，ping host 路由验证 host↔client 回路 | `src/client/index.tsx` |
+## 1. 组件与平面
 
-装好后打开任意 DSH 会话：侧边栏底部（设置按钮旁）出现 **🧰 better-tools** 独立按钮（绿点 = host 回路正常），点击弹出状态面板；模型还能调用 `better_tools_ping` 工具。
+| 组件 | 平面 | 源码 | 分发 |
+| --- | --- | --- | --- |
+| host 半 | host 组合（profile bundle） | `src/index.ts` | npm 包 |
+| client 半 | web shell | `src/client/index.tsx` | npm 包 |
+| cordis-gitbash 预设 | agent preset | `presets/cordis-gitbash/` | npm 包内 vendor 副本 |
 
-## 为什么做这个脚手架
+- **host 半**：进程级、全会话共享（服务/工具/路由/全局提示）。
+- **client 半**：浏览器 web shell 内，只消费模块表。
+- **预设**：按会话加载；与插件正交，可独立部署。
 
-你的另一个仓库 [cordis-gitbash](https://github.com/xiegaoxiao/dsh-preset-standard-gitbash) 用的是 **Agent preset**（按会话挂载的提示词/工具），而 DSH 还有第二种完全正交的扩展平面：**host 插件 / profile bundle**——进程级、全会话共享，能给整个 `dsh web` 加 host 服务、路由和客户端 UI。DSH-better-sidebar 就是这类插件的代表作。
+## 2. 能力清单（事实）
 
-这个仓库把那条架构路径压成最小可跑的形式，让你（或 AI）能照着抄着扩展，不用从零啃 DSH-better-sidebar 那 300+ 行 tsdown 配置和几十个源文件。
+- 侧边栏 `sidebar.footer.action` 槽注册一个设置式按钮（官方 `IconCordisPluginOutline14`），点击弹出居中 modal。
+- modal 内含：宿主状态（ping `/better-tools/api/ping`）+ **Shell 优先**开关（`off | gitbash | pwsh`），读写 `/better-tools/api/shell`。
+- host 注册设置命名空间 `better-tools.shell`（schemastery 枚举，默认 `gitbash`），持久化于用户设置文档。
+- host 注册**全局** systemPrompt 段落 + 变量：每次模型步组装时实时读设置 → **无论预设/模式，所有会话**的 Agent 都被指示优先用所选 shell。
+- 工具 `better_tools_ping`（演示用）。
+- vendor 的预设内 `bash` 工具（真实 Git Bash、非沙箱）通过 `presentCall`/`presentResult` 声明 `card: 'terminal'`，与官方 `pwsh` 一样渲染可点击终端卡片。
 
-## 挂载架构（为什么一条命令就能装上）
-
-DSH 官方 `dsh plugin` 命令 = **pnpm 转发器 + bundles 协调器**：
-
-1. `dsh plugin --profile web add dsh-better-tools`
-   - 在 `~/.dsh/profiles/web/` 里执行 `pnpm add dsh-better-tools`（装进 profile 的 `package.json` + `node_modules`）
-2. **协调 `dsh.profile.bundles`**：pnpm 装完后扫描 profile 依赖，凡是 `package.json` 里声明了 `dsh.bundle.patch` 的包，自动追加进 `bundles` 层栈并写回清单
-3. **启动时 profile boot 合成**：把 `bundles` 里每个包的 `cordis.patch.yml` 按序叠起来 + profile 自己的 `cordis.patch.yml` → 生成最终 loader entry 列表 → `insert` 那一行 `better-tools` 就把插件挂进 **host 组合**；同时 `dsh.client` 声明让 client 半被 web shell 组合
-
-关键声明（都在本仓库里）：
-
-- `package.json`：
-  ```json
-  "dsh": {
-    "bundle": { "patch": "./cordis.patch.yml" },
-    "client": { "inject": ["@deepseek-ai/dsh-client-runtime", ...], "platform": "web" }
-  }
-  ```
-- `cordis.patch.yml`（bundle 挂载层）：
-  ```yaml
-  - insert:
-      - id: better-tools
-        name: 'dsh-better-tools'
-  ```
-
-client 半的产物 `lib/client.js` 由构建时包装成 web shell 认识的注册协议：
-
-```js
-window.__ModuleLoader__.load({ id: "dsh-better-tools", factory: (require) => { ... } })
-```
-
-`id` 必须等于 `package.json` 的 `name`（client-modules 按包名组合模块表）。
-
-## 与 cordis-gitbash（Agent preset）的区别
-
-| 维度 | cordis-gitbash（Agent preset） | 本仓库（host 插件 / bundle） |
-| --- | --- | --- |
-| 扩展平面 | **preset 层**，按会话挂载 | **host 组合层**，进程级、全会话共享 |
-| 挂载点 | `~/.dsh/.agent-presets/cordis-gitbash/` | `~/.dsh/profiles/web/`（npm 包） |
-| 挂载方式 | 复制目录 + GUI 模式选择器选中 | `dsh plugin --profile web add dsh-better-tools` |
-| 贡献 | 会话的提示词/工具/技能 | host 服务 + 路由 + 客户端 UI |
-| 生命周期 | 随会话，可每会话选不同模式 | 常驻，所有会话生效 |
-| 生效 | 新会话即生效 | 硬刷新浏览器（client 半热加载）；host 半改动重启 |
-
-两者可共存：preset 决定「Agent 会话用什么能力干活」，host 插件决定「web 应用有什么能力/长相」。
-
-## 目录结构
+## 3. 挂载机制
 
 ```
-dsh-better-tools/
-├── package.json           # dsh.bundle.patch + dsh.client 声明、peer/dev 依赖
-├── cordis.patch.yml       # bundle 挂载补丁（唯一 insert 行）
-├── tsconfig.json          # 类型检查（tsc --noEmit）
-├── tsconfig.build.json    # 声明产物（lib/types/*.d.ts）
-├── tsdown.config.ts       # host ESM + client CJS 双产物构建
-├── src/
-│   ├── context-types.ts   # 结构化的 cordis Context 增强（双半共享，零 Node 依赖）
-│   ├── index.ts           # host 半：服务 + 工具 + 路由
-│   └── client/
-│       └── index.tsx      # client 半：侧边栏按钮 + 状态面板 + host ping
-├── scripts/
-│   ├── install.sh         # 一键安装插件（macOS / Linux / Git Bash）
-│   ├── install.ps1        # 一键安装插件（Windows PowerShell）
-│   ├── install-preset.sh  # 一键部署 cordis-gitbash 预设（macOS / Linux / Git Bash）
-│   └── install-preset.ps1 # 一键部署 cordis-gitbash 预设（Windows PowerShell）
-├── presets/
-│   └── cordis-gitbash/    # vendor 的预设副本（含 tool-gitbash-v2.mjs 终端卡片修复）
-├── AGENTS.md              # 面向 AI / 插件开发者的接入文档
-└── README.md              # 本文件
-```
-
-## 安装
-
-**前置**：DSH 能跑（`dsh web` 正常）、Node ≥ 20、pnpm（`dsh plugin` 依赖 pnpm 在 PATH 上）。
-
-```bash
-# macOS / Linux / Windows Git Bash
-curl -fsSL https://raw.githubusercontent.com/xiegaoxiao/dsh-better-tools/main/scripts/install.sh | bash
-
-# Windows（PowerShell 5.1+ / pwsh）
-irm https://raw.githubusercontent.com/xiegaoxiao/dsh-better-tools/main/scripts/install.ps1 | iex
-```
-
-等价手动命令（与一键脚本一致）：
-
-```bash
-cd ~/.dsh/profiles/web
-npx -y --package @deepseek-ai/dsh dsh plugin --profile web add dsh-better-tools
-```
-
-装完**硬刷新浏览器**（Cmd/Ctrl+Shift+R）。client 半改动热加载无需重启；仅 host 半改动需重启 `dsh web`。
-
-> 从源码安装（开发用）：`git clone` 后 `npm install && npm run build`，把 `~/.dsh/profiles/web/package.json` 的依赖写 `"dsh-better-tools": "link:<克隆目录绝对路径>"`，并在该 profile 的 `cordis.patch.yml` 追加 `- insert: [{ id: better-tools, name: 'dsh-better-tools' }]`，然后 `pnpm install`。
-
-## 跨机器部署
-
-「更好的 shell 体验」由**两个平面**组成，分别分发：
-
-### ① 插件（host/client 双半）——随 npm 包走
-
-发布到 npm 后，任意机器一条命令装好并自动挂载：
-
-```bash
 dsh plugin --profile web add dsh-better-tools
+  └─ pnpm add（装进 profile）
+      └─ reconcile dsh.profile.bundles（发现 dsh.bundle.patch 声明 → 追加进 bundles）
+          └─ profile boot 合成（bundles 的 cordis.patch.yml 叠 + profile 自己的）
+              └─ insert better-tools 行 → host 组合；dsh.client → client 半
 ```
 
-- 装完**重启一次 `dsh web`**（host 半改动生效），然后硬刷新浏览器。
-- 侧边栏 🧰 better-tools 按钮、Shell 优先开关、host 路由、全局 shell 偏好提示全部随之生效。
-- Shell 偏好持久化在各机器自己的 `~/.dsh/settings.yaml`，默认 `gitbash`（Windows 语义；macOS/Linux 建议切到「关闭」）。
+关键声明：`package.json → dsh.bundle.patch`（`./cordis.patch.yml`）、`dsh.client`（`platform: web` + inject 包列表）；`cordis.patch.yml` 只有一行 `insert { id: better-tools, name: 'dsh-better-tools' }`。client 产物首行必须是 `window.__ModuleLoader__.load({ id: "dsh-better-tools", ... })`（`id` == `package.json name`）。
 
-### ② cordis-gitbash 预设（含 bash 终端卡片修复）——用部署脚本走
+## 4. 硬约束与踩坑记录（改代码前必读）
 
-bash 工具的终端卡片渲染在**预设文件**（`tool-gitbash-v2.mjs`）里，不属于 npm 插件。本包 vendor 了一份到 `presets/cordis-gitbash/`，用部署脚本拷到目标机器：
+- **零写入 DSH 源码**；挂载只走 bundle 机制。
+- **client 半禁值导入其他插件代码**：只准 `require` 模块表条目（react / react-dom / cordis / `@deepseek-ai/dsh-client-*` 平台包）。`tsdown.config.ts` 的 `CLIENT_EXTERNALS` + `purityGatePlugin` 固化该纪律。
+- **`better-tools` 命名空间不在 `dsh-host-apiproxy` 的 `WEB_SETTINGS_NAMESPACES` allowlist**（无法改 DSH 源码添加）→ web client 走官方 `api.settings` 会被 `settings-not-exposed` 拒；本插件改走**自有路由** `/better-tools/api/shell` 中转 host 的 `ctx.settings`。
+- **settings / systemPrompt 必须顶层硬注入**（`export const inject = ['webServer','tools','settings','systemPrompt']`）。在 `apply` 里嵌套 `ctx.inject(['settings'], cb)` 实测不可靠（注册不落地）。
+- **`settings.register()` 返回值是 scope 对象**（`{get,watch,update,replace}`），**不是** effect disposer——绝不能在 `ctx.effect(() => settings.register(...))` 里 return 它，否则 cordis 抛 `Invalid effect` 且后续 effect 全被打断。
+- `src/context-types.ts` 必须零 Node 依赖（client 可达声明图）。
 
-```bash
-# macOS / Linux / Windows Git Bash
-bash <repo>/scripts/install-preset.sh
+## 5. 仓库地图
 
-# Windows PowerShell
-powershell -ExecutionPolicy Bypass -File <repo>/scripts/install-preset.ps1
-```
-
-从 npm 安装的包内直接调用（包已含 `presets/` 与脚本）：
-
-```bash
-# Git Bash
-bash ~/.dsh/profiles/web/node_modules/dsh-better-tools/scripts/install-preset.sh
-
-# Windows PowerShell
-powershell -ExecutionPolicy Bypass -File `
-  "$env:USERPROFILE\.dsh\profiles\web\node_modules\dsh-better-tools\scripts\install-preset.ps1"
-```
-
-- 已存在同目录会先带时间戳备份。
-- 预设按**会话**加载：新开会话（选 cordis-gitbash）即生效，无需重启 `dsh web`。
-
-## 验证
-
-1. **client 半**：侧边栏底部（设置按钮旁）出现 🧰 按钮；按钮上的状态点 + 点击弹出的面板显示 host ping 结果：
-   - 绿 `host ok · dsh-better-tools@0.1.0` → host↔client 回路通
-   - 红/黄 → 见「常见问题」
-2. **host 半工具**：任意会话让 Agent 调用 `better_tools_ping`，返回 `{ ok: true, plugin: "dsh-better-tools", version: "0.1.0", echo: "pong" }`
-3. **host 半路由**：浏览器开 `http://127.0.0.1:3080/better-tools/api/ping`，返回 `{"ok":true,"name":"dsh-better-tools","version":"0.1.0","time":...}`
-
-## 开发与构建
-
-```bash
-npm install        # @deepseek-ai/* 已发布到 npm（^0.1.0-rc.6），直接解析
-npm run typecheck  # tsc --noEmit
-npm run build      # 产物 lib/index.js（host ESM）+ lib/client.js（client CJS）+ lib/types
-npm run watch      # tsdown --watch
-```
-
-**构建要点**（详见 `tsdown.config.ts` 注释）：
-
-- host 半是普通 Node ESM，`@deepseek-ai/*` 作为 peer 外部化，运行时从 profile 的 node_modules 解析；
-- client 半是浏览器 CJS 闭包工厂，**只准**消费平台模块表条目（react / react-dom / cordis / @deepseek-ai 平台包），其余依赖内联；`purityGatePlugin` 在构建期拒绝任何其他 `@deepseek-ai/*` 值导入——跨插件协作走 cordis 服务，绝不做值导入（type-only 导入会被擦除，不触发门禁）。
-
-## 常见问题
-
-| 现象 | 原因与处理 |
+| 路径 | 角色 |
 | --- | --- |
-| 报 `Ignored build scripts` | pnpm 11 拦构建脚本；跑 `pnpm approve-builds --all` |
-| 报 `minimum release age` / 版本不足 24h | 装的版本发布不足 24h；等 24h 或重跑 |
-| 按钮/面板显示 `host error: HTTP 404` | host 半没挂上（可能双挂载或只装了 client）。检查 `~/.dsh/profiles/web/cordis.patch.yml` 是否有旧手动挂载行 |
-| 侧边栏出现两个 🧰 按钮 | 双挂载：bundle 通道 + 手动挂载行同时存在；删掉 profile 里手写的 `better-tools` insert 行 |
-| 找不到 profile 目录 | 先跑一次 `dsh web` 初始化 `~/.dsh/profiles/web` |
+| `src/index.ts` | host 半：服务、设置命名空间、systemPrompt 段落、工具、`/better-tools/api/*` 路由 |
+| `src/client/index.tsx` | client 半：侧边栏按钮 + modal（宿主状态 + Shell 优先） |
+| `src/context-types.ts` | cordis Context 增强（双半共享、零 Node 依赖） |
+| `cordis.patch.yml` | bundle 挂载补丁（唯一 insert 行） |
+| `tsdown.config.ts` | host ESM + client CJS 双产物构建 |
+| `presets/cordis-gitbash/` | vendor 的预设（agent.cordis.yml、tool-gitbash-v2.mjs、skills） |
+| `scripts/install*.{sh,ps1}` | 插件安装 + 预设部署 |
+| `install.md` | AI 给 AI 的安装指南 |
+| `AGENTS.md` | 本仓库接入文档（开发向） |
 
-## 许可
+## 6. 构建 / 类型检查 / 产物门槛
+
+```bash
+npm install
+npm run typecheck   # tsc --noEmit
+npm run build       # lib/index.js（host ESM）+ lib/client.js（client CJS）+ lib/types
+```
+
+验收门槛（改动后人工核对）：
+
+- [ ] `lib/client.js` 首行 `window.__ModuleLoader__.load({ id: "dsh-better-tools", ... })`
+- [ ] `lib/client.js` 无 `require("node:...")` / 非平台 `@deepseek-ai/*` 值导入
+- [ ] `lib/index.js` 外部化 `@deepseek-ai/dsh-settings`、`@deepseek-ai/dsh-tools`、`@deepseek-ai/schemastery` 等（运行时从 profile/回退目录解析）
+- [ ] `dsh --profile web --dump-config` 组合树含 `better-tools` 行
+
+## 7. 发布
+
+```bash
+npm run build
+npm publish --otp <6位码>   # 账号开 2FA 时；或配置 bypass-2FA 的 granular token
+```
+
+发布前 `npm publish --dry-run` 核对 tarball 内容（22 文件：lib、presets、scripts、src、文档）。
+
+## 8. 安装 / 部署
+
+见 `install.md`（含前置检查、逐步命令、预期输出、故障排查、回滚）。速览：
+
+- 插件：`dsh plugin --profile web add dsh-better-tools`，装完**重启 `dsh web`**。
+- 预设：`bash ~/.dsh/profiles/web/node_modules/dsh-better-tools/scripts/install-preset.sh`，新会话生效。
+
+## 9. 许可
 
 MIT。

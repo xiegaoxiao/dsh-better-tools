@@ -56,6 +56,10 @@ dsh plugin --profile web add dsh-better-tools
 | `cordis.patch.yml` | bundle 挂载行 | 一般不动 |
 | `tsdown.config.ts` | 双产物构建 | 加 client 依赖 / 懒加载 chunk 时改 |
 | `package.json` | 包清单 + `dsh.*` 声明 | 加 peer/dev 依赖、bump 版本 |
+| `presets/cordis-gitbash/` | vendor 的 agent 预设（自定义 bash 工具等） | 改预设行为后同步更新这里 |
+| `scripts/install-preset.*` | 预设部署脚本 | 改部署流程时 |
+| `install.md` | AI 给 AI 的安装指南 | 安装/部署流程变化时同步 |
+| `README.md` | AI 向仓库概览 | 能力/约束变化时同步 |
 
 `src/context-types.ts` **必须是零 Node 依赖**（client 可达声明图）：不要 `import 'node:http'` 之类，HTTP 面用结构化接口（`BetterToolsHttpRequest/Response`）。
 
